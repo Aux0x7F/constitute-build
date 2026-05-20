@@ -1,3 +1,4 @@
+// domain-owned-vocabulary: runner.resource.unavailable
 use anyhow::{Result, anyhow};
 use constitute_protocol::{
     BUILD_ARTIFACT_KIND_MODULE, BUILD_CONTRACT_STATE_READY, BUILD_PROOF_STATE_PROVED,
