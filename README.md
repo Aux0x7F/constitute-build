@@ -8,6 +8,11 @@ grants, and secret posture, then emits storage-backed artifact refs and proof
 refs. It does not own source/version truth, storage bytes, release selection, or
 runner process truth.
 
+Build run state is reduced from contract readiness, source and recipe refs,
+runner availability, action/resource grants, secret posture, compatibility
+posture, and release-candidate output. A caller cannot make a failed prerequisite
+look like an artifact-producing build by passing a state flag.
+
 ## Commands
 
 ```powershell
