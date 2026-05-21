@@ -1,8 +1,12 @@
 use constitute_build::{
-    build_fixture, build_status, default_build_output_plan, default_build_run_request, default_now,
-    reduce_build_run, validate_build_fixture,
+    append_build_run, build_fixture, build_state_status, build_status, default_build_output_plan,
+    default_build_run_request, default_build_state, default_now, reduce_build_run,
+    validate_build_fixture, validate_build_state,
 };
-use constitute_protocol::{BUILD_RUN_STATE_BLOCKED, BUILD_RUN_STATE_SUCCEEDED};
+use constitute_protocol::{
+    BUILD_RUN_STATE_BLOCKED, BUILD_RUN_STATE_SUCCEEDED, RUNNER_OPERATION_STATE_BLOCKED,
+    RUNNER_OPERATION_STATE_SUCCEEDED,
+};
 
 #[test]
 fn fixture_validates_build_contract_and_runner_fulfillment() {
@@ -28,7 +32,23 @@ fn fixture_validates_build_contract_and_runner_fulfillment() {
     );
     assert_eq!(
         fixture.run.release_candidate_refs,
-        vec!["release:candidate:cybersec-bootstrap"]
+        vec!["release:candidate:build-runner-proof"]
+    );
+    assert_eq!(
+        fixture.runner_operation.state,
+        RUNNER_OPERATION_STATE_SUCCEEDED
+    );
+    assert_eq!(
+        fixture.runner_operation.contract_ref,
+        fixture.contract.build_contract_ref
+    );
+    assert_eq!(
+        fixture.runner_operation.output_refs,
+        vec![
+            "build:artifact:module",
+            "build:proof:build-runner-proof",
+            "release:candidate:build-runner-proof"
+        ]
     );
 }
 
@@ -44,6 +64,14 @@ fn blocked_build_is_posture_not_artifact_truth() {
     assert!(fixture.run.release_candidate_refs.is_empty());
     assert!(fixture.artifact.is_none());
     assert_eq!(fixture.proof.state, "blocked");
+    assert_eq!(
+        fixture.runner_operation.state,
+        RUNNER_OPERATION_STATE_BLOCKED
+    );
+    assert_eq!(
+        fixture.runner_operation.blocked_reasons,
+        vec!["runner.resource.unavailable"]
+    );
 }
 
 #[test]
@@ -51,6 +79,7 @@ fn status_is_bounded() {
     let status = build_status().expect("status builds");
     assert!(status.build_contract_ref.starts_with("build:contract:"));
     assert!(status.runner_ref.starts_with("runner:instance:"));
+    assert!(status.runner_operation_ref.starts_with("runner:operation:"));
 }
 
 #[test]
@@ -135,5 +164,40 @@ fn build_reducer_blocks_source_and_recipe_mismatch() {
     assert!(
         run.blocked_reasons
             .contains(&"build.recipe.mismatch".to_string())
+    );
+}
+
+#[test]
+fn build_state_persists_runner_operation_and_artifact_posture() {
+    let mut state = default_build_state(default_now()).expect("state builds");
+    validate_build_state(&state).expect("state validates");
+    let initial = build_state_status(&state).expect("status builds");
+    assert_eq!(initial.runner_operation_count, 1);
+
+    let fixture = build_fixture(default_now(), BUILD_RUN_STATE_SUCCEEDED).expect("fixture builds");
+    let request = default_build_run_request(default_now() + 100);
+    let artifact = fixture.artifact.as_ref().expect("fixture has artifact");
+    let outcome = append_build_run(
+        &mut state,
+        request,
+        default_build_output_plan(artifact, &fixture.proof),
+    )
+    .expect("append succeeds");
+
+    assert_eq!(
+        outcome.runner_operation.state,
+        RUNNER_OPERATION_STATE_SUCCEEDED
+    );
+    assert_eq!(state.runs.len(), 2);
+    assert_eq!(state.artifacts.len(), 2);
+    assert_eq!(state.proofs.len(), 2);
+    assert_eq!(state.runner_operations.len(), 2);
+    assert_eq!(
+        state
+            .runner_operations
+            .last()
+            .expect("runner op")
+            .contract_ref,
+        state.contract.build_contract_ref
     );
 }

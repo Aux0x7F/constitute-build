@@ -17,7 +17,13 @@ look like an artifact-producing build by passing a state flag.
 
 ```powershell
 cargo run -- fixture run
+cargo run -- init --state-file target/build-state.json
 cargo run -- run --state succeeded
 cargo run -- run --state blocked
-cargo run -- status
+cargo run -- run --state succeeded --state-file target/build-state.json
+cargo run -- status --state-file target/build-state.json
 ```
+
+Stateful runs persist build runs, artifact refs, build proofs, and runner
+operation evidence together. The runner contribution is evidence for
+fulfillment; it does not make the runner own build semantics.
