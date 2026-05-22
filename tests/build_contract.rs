@@ -32,6 +32,12 @@ fn fixture_validates_build_contract_and_runner_fulfillment() {
         fixture.contract.compatibility_refs
     );
     assert_eq!(
+        fixture.run.content_index_refs,
+        fixture.contract.content_index_refs
+    );
+    assert_eq!(fixture.run.project_refs, fixture.contract.project_refs);
+    assert_eq!(fixture.run.work_item_refs, fixture.contract.work_item_refs);
+    assert_eq!(
         fixture.run.release_candidate_refs,
         vec!["release:candidate:build-runner-proof"]
     );

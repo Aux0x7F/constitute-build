@@ -120,11 +120,14 @@ pub fn build_fixture(now: u64, state: &str) -> Result<BuildFixture> {
         source_snapshot_ref: "source:snapshot:head".to_string(),
         recipe_ref: "build:recipe:browser-module".to_string(),
         state: BUILD_CONTRACT_STATE_READY.to_string(),
+        content_index_refs: vec!["content-index:source:constitute-git".to_string()],
         runner_role_refs: vec!["runner:role:build".to_string()],
         runner_refs: vec!["runner:instance:local".to_string()],
         resource_grant_refs: vec!["resource:grant:build-lite".to_string()],
         secret_boundary_refs: vec!["secret:boundary:not-required".to_string()],
         compatibility_refs: vec!["compat:surface-app:0.1".to_string()],
+        project_refs: vec!["project:constituency".to_string()],
+        work_item_refs: vec!["work-item:source-build-lifecycle".to_string()],
         expected_artifact_refs: vec!["build:artifact:module".to_string()],
         evidence_refs: vec!["source:update:main".to_string()],
         blocked_reasons: vec![],
@@ -288,6 +291,7 @@ pub fn reduce_build_run(
         } else {
             BUILD_RUN_STATE_BLOCKED.to_string()
         },
+        content_index_refs: contract.content_index_refs.clone(),
         grant_refs: request.grant_refs,
         resource_grant_refs: contract.resource_grant_refs.clone(),
         secret_boundary_refs: contract.secret_boundary_refs.clone(),
@@ -318,6 +322,8 @@ pub fn reduce_build_run(
         } else {
             vec![]
         },
+        project_refs: contract.project_refs.clone(),
+        work_item_refs: contract.work_item_refs.clone(),
         evidence_refs: output.evidence_refs,
         blocked_reasons,
         safe_facts: serde_json::json!({
