@@ -35,6 +35,14 @@ fn fixture_validates_build_contract_and_runner_fulfillment() {
         fixture.run.content_index_refs,
         fixture.contract.content_index_refs
     );
+    assert_eq!(
+        fixture.run.source_operation_refs,
+        fixture.contract.source_operation_refs
+    );
+    assert_eq!(
+        fixture.proof.source_operation_refs,
+        fixture.contract.source_operation_refs
+    );
     assert_eq!(fixture.run.project_refs, fixture.contract.project_refs);
     assert_eq!(fixture.run.work_item_refs, fixture.contract.work_item_refs);
     assert_eq!(
@@ -107,6 +115,7 @@ fn status_is_bounded() {
     assert!(status.build_contract_ref.starts_with("build:contract:"));
     assert!(status.runner_ref.starts_with("runner:instance:"));
     assert!(status.runner_operation_ref.starts_with("runner:operation:"));
+    assert_eq!(status.source_operation_ref_count, 2);
 }
 
 #[test]
@@ -228,6 +237,10 @@ fn build_state_persists_runner_operation_and_artifact_posture() {
             .expect("runner op")
             .contract_ref,
         state.contract.build_contract_ref
+    );
+    assert_eq!(
+        state.runs.last().expect("run").source_operation_refs,
+        state.contract.source_operation_refs
     );
     assert_eq!(
         outcome.host_fabric_contribution.role,

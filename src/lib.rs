@@ -44,6 +44,7 @@ pub struct BuildFixture {
 pub struct BuildStatus {
     pub build_contract_ref: String,
     pub source_snapshot_ref: String,
+    pub source_operation_ref_count: usize,
     pub runner_ref: String,
     pub runner_operation_ref: String,
     pub artifact_ref: String,
@@ -120,6 +121,10 @@ pub fn build_fixture(now: u64, state: &str) -> Result<BuildFixture> {
         source_snapshot_ref: "source:snapshot:head".to_string(),
         recipe_ref: "build:recipe:browser-module".to_string(),
         state: BUILD_CONTRACT_STATE_READY.to_string(),
+        source_operation_refs: vec![
+            "source:operation:ref-update".to_string(),
+            "source:operation:project-link".to_string(),
+        ],
         content_index_refs: vec!["content-index:source:constitute-git".to_string()],
         runner_role_refs: vec!["runner:role:build".to_string()],
         runner_refs: vec!["runner:instance:local".to_string()],
@@ -154,6 +159,7 @@ pub fn build_fixture(now: u64, state: &str) -> Result<BuildFixture> {
         state: BUILD_PROOF_STATE_PROVED.to_string(),
         source_snapshot_ref: contract.source_snapshot_ref.clone(),
         runner_ref: "runner:instance:local".to_string(),
+        source_operation_refs: contract.source_operation_refs.clone(),
         artifact_refs: vec![artifact_plan.artifact_ref.clone()],
         log_refs: vec!["storage:object:build-log".to_string()],
         metric_refs: vec!["metrics:build:build-runner-proof".to_string()],
@@ -291,6 +297,7 @@ pub fn reduce_build_run(
         } else {
             BUILD_RUN_STATE_BLOCKED.to_string()
         },
+        source_operation_refs: contract.source_operation_refs.clone(),
         content_index_refs: contract.content_index_refs.clone(),
         grant_refs: request.grant_refs,
         resource_grant_refs: contract.resource_grant_refs.clone(),
@@ -369,10 +376,15 @@ pub fn build_runner_operation(
         state: state.to_string(),
         grant_refs: request.grant_refs.clone(),
         capability_refs: vec![CAPABILITY_BUILD_RUN_EXECUTE.to_string()],
-        input_refs: vec![
-            contract.source_snapshot_ref.clone(),
-            contract.recipe_ref.clone(),
-        ],
+        input_refs: [
+            vec![
+                contract.source_snapshot_ref.clone(),
+                contract.recipe_ref.clone(),
+            ],
+            contract.source_operation_refs.clone(),
+            contract.content_index_refs.clone(),
+        ]
+        .concat(),
         output_refs: if succeeded {
             [
                 output.artifact_refs.clone(),
@@ -427,6 +439,7 @@ pub fn build_runner_operation(
         safe_facts: serde_json::json!({
             "processorContract": "build",
             "sourceSnapshotRef": contract.source_snapshot_ref,
+            "sourceOperationCount": contract.source_operation_refs.len(),
             "recipeRef": contract.recipe_ref,
             "artifactCount": if succeeded { output.artifact_refs.len() } else { 0 },
             "releaseCandidateCount": if succeeded { output.release_candidate_refs.len() } else { 0 }
@@ -466,11 +479,16 @@ pub fn build_host_fabric_contribution_for_run(
         subject_ref: run.run_ref.clone(),
         capability_refs: vec![CAPABILITY_BUILD_RUN_EXECUTE.to_string()],
         grant_refs: request.grant_refs.clone(),
-        input_refs: vec![
-            contract.source_snapshot_ref.clone(),
-            contract.recipe_ref.clone(),
-            request.runner_operation_ref.clone(),
-        ],
+        input_refs: [
+            vec![
+                contract.source_snapshot_ref.clone(),
+                contract.recipe_ref.clone(),
+                request.runner_operation_ref.clone(),
+            ],
+            contract.source_operation_refs.clone(),
+            contract.content_index_refs.clone(),
+        ]
+        .concat(),
         output_refs: if succeeded {
             [
                 output.artifact_refs.clone(),
@@ -498,6 +516,7 @@ pub fn build_host_fabric_contribution_for_run(
             "buildContractRef": contract.build_contract_ref,
             "runRef": run.run_ref,
             "runState": run.state,
+            "sourceOperationCount": contract.source_operation_refs.len(),
             "artifactCount": if succeeded { output.artifact_refs.len() } else { 0 },
             "releaseCandidateCount": if succeeded { output.release_candidate_refs.len() } else { 0 }
         }),
@@ -595,6 +614,7 @@ pub fn build_state_status(state: &BuildState) -> Result<BuildStatus> {
     Ok(BuildStatus {
         build_contract_ref: state.contract.build_contract_ref.clone(),
         source_snapshot_ref: state.contract.source_snapshot_ref.clone(),
+        source_operation_ref_count: state.contract.source_operation_refs.len(),
         runner_ref: last_run.runner_ref.clone(),
         runner_operation_ref: last_run.runner_operation_ref.clone(),
         artifact_ref: state
@@ -632,6 +652,9 @@ pub fn validate_build_fixture(fixture: &BuildFixture) -> Result<()> {
             "build fixture host-fabric contribution subject mismatch"
         ));
     }
+    if fixture.run.source_operation_refs != fixture.contract.source_operation_refs {
+        return Err(anyhow!("build run source operation refs diverge"));
+    }
     if fixture.run.state == BUILD_RUN_STATE_SUCCEEDED {
         let artifact = fixture
             .artifact
@@ -640,6 +663,9 @@ pub fn validate_build_fixture(fixture: &BuildFixture) -> Result<()> {
         validate_build_artifact(artifact)?;
         if fixture.run.source_snapshot_ref != fixture.proof.source_snapshot_ref {
             return Err(anyhow!("build run and proof source snapshots diverge"));
+        }
+        if fixture.run.source_operation_refs != fixture.proof.source_operation_refs {
+            return Err(anyhow!("build run and proof source operation refs diverge"));
         }
         if !fixture
             .run
@@ -664,6 +690,9 @@ pub fn validate_build_state(state: &BuildState) -> Result<()> {
         validate_build_run(run)?;
         if run.build_contract_ref != state.contract.build_contract_ref {
             return Err(anyhow!("build state run contract mismatch"));
+        }
+        if run.source_operation_refs != state.contract.source_operation_refs {
+            return Err(anyhow!("build state run source operation refs diverge"));
         }
     }
     for artifact in &state.artifacts {
@@ -753,6 +782,7 @@ fn build_proof_for_run(run: &BuildRun, output: &BuildOutputPlan, now: u64) -> Re
         },
         source_snapshot_ref: run.source_snapshot_ref.clone(),
         runner_ref: run.runner_ref.clone(),
+        source_operation_refs: run.source_operation_refs.clone(),
         artifact_refs: if succeeded {
             output.artifact_refs.clone()
         } else {
