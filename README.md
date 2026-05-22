@@ -27,3 +27,7 @@ cargo run -- status --state-file target/build-state.json
 Stateful runs persist build runs, artifact refs, build proofs, and runner
 operation evidence together. The runner contribution is evidence for
 fulfillment; it does not make the runner own build semantics.
+
+Build fixtures and run outcomes also emit a host-fabric build-processor member
+contribution. That contribution lets fabric reduce host composition posture
+without making fabric execute builds, select releases, or own source truth.

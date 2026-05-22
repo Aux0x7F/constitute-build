@@ -1,13 +1,16 @@
 // domain-owned-vocabulary: build.contract.notReady build.contract.expired build.source.mismatch build.recipe.mismatch build.runner.unavailable build.secretBoundary.blocked build.compatibility.unavailable runner.grant.unavailable runner.resource.unavailable
 use anyhow::{Result, anyhow};
+use constitute_fabric::{HostFabricMemberContributionSpec, build_host_fabric_member_contribution};
 use constitute_protocol::{
     BUILD_ARTIFACT_KIND_MODULE, BUILD_CONTRACT_STATE_READY, BUILD_PROOF_STATE_BLOCKED,
     BUILD_PROOF_STATE_PROVED, BUILD_RUN_STATE_BLOCKED, BUILD_RUN_STATE_SUCCEEDED, BuildArtifact,
-    BuildContract, BuildProof, BuildRun, CAPABILITY_BUILD_RUN_EXECUTE, RECORD_BUILD_ARTIFACT,
+    BuildContract, BuildProof, BuildRun, CAPABILITY_BUILD_RUN_EXECUTE,
+    FABRIC_MEMBER_CONTRIBUTION_BLOCKED, FABRIC_MEMBER_CONTRIBUTION_RUNNING,
+    FABRIC_MEMBER_ROLE_BUILD_PROCESSOR, HostFabricMemberContribution, RECORD_BUILD_ARTIFACT,
     RECORD_BUILD_CONTRACT, RECORD_BUILD_PROOF, RECORD_BUILD_RUN, RECORD_RUNNER_OPERATION,
     RUNNER_OPERATION_EXECUTE, RUNNER_OPERATION_STATE_BLOCKED, RUNNER_OPERATION_STATE_SUCCEEDED,
     RunnerOperationRecord, validate_build_artifact, validate_build_contract, validate_build_proof,
-    validate_build_run, validate_runner_operation,
+    validate_build_run, validate_host_fabric_member_contribution, validate_runner_operation,
 };
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
@@ -30,6 +33,7 @@ const DEFAULT_RUNNER_MEMBER_REF: &str =
 pub struct BuildFixture {
     pub contract: BuildContract,
     pub runner_operation: RunnerOperationRecord,
+    pub host_fabric_contribution: HostFabricMemberContribution,
     pub run: BuildRun,
     pub artifact: Option<BuildArtifact>,
     pub proof: BuildProof,
@@ -48,10 +52,12 @@ pub struct BuildStatus {
     pub artifact_count: usize,
     pub proof_count: usize,
     pub runner_operation_count: usize,
+    pub host_fabric_contribution_count: usize,
 }
 
 #[derive(Clone, Debug)]
 pub struct BuildRunRequest {
+    pub fabric_ref: String,
     pub source_snapshot_ref: String,
     pub recipe_ref: String,
     pub runner_ref: String,
@@ -89,6 +95,8 @@ pub struct BuildState {
     pub proofs: Vec<BuildProof>,
     #[serde(default)]
     pub runner_operations: Vec<RunnerOperationRecord>,
+    #[serde(default)]
+    pub host_fabric_contributions: Vec<HostFabricMemberContribution>,
     pub updated_at: u64,
 }
 
@@ -96,6 +104,7 @@ pub struct BuildState {
 #[serde(rename_all = "camelCase")]
 pub struct BuildRunOutcome {
     pub runner_operation: RunnerOperationRecord,
+    pub host_fabric_contribution: HostFabricMemberContribution,
     pub run: BuildRun,
     pub artifact: Option<BuildArtifact>,
     pub proof: BuildProof,
@@ -177,9 +186,12 @@ pub fn build_fixture(now: u64, state: &str) -> Result<BuildFixture> {
         ..proof_plan
     };
     let runner_operation = build_runner_operation(&contract, &run, &request, &output)?;
+    let host_fabric_contribution =
+        build_host_fabric_contribution_for_run(&contract, &run, &request, &output)?;
     let fixture = BuildFixture {
         contract,
         runner_operation,
+        host_fabric_contribution,
         run,
         artifact: succeeded.then_some(artifact_plan),
         proof,
@@ -190,6 +202,7 @@ pub fn build_fixture(now: u64, state: &str) -> Result<BuildFixture> {
 
 pub fn default_build_run_request(now: u64) -> BuildRunRequest {
     BuildRunRequest {
+        fabric_ref: "fabric:runner-lab".to_string(),
         source_snapshot_ref: "source:snapshot:head".to_string(),
         recipe_ref: "build:recipe:browser-module".to_string(),
         runner_ref: "runner:instance:local".to_string(),
@@ -423,6 +436,72 @@ pub fn build_runner_operation(
     Ok(runner_operation)
 }
 
+pub fn build_host_fabric_contribution_for_run(
+    contract: &BuildContract,
+    run: &BuildRun,
+    request: &BuildRunRequest,
+    output: &BuildOutputPlan,
+) -> Result<HostFabricMemberContribution> {
+    validate_build_contract(contract)?;
+    validate_build_run(run)?;
+    let succeeded = run.state == BUILD_RUN_STATE_SUCCEEDED;
+    let contribution = build_host_fabric_member_contribution(HostFabricMemberContributionSpec {
+        contribution_id: format!("fabric-contribution:build:{}", sanitize_ref(&run.run_ref)),
+        fabric_ref: request.fabric_ref.clone(),
+        host_ref: request.host_ref.clone(),
+        member_ref: request.runner_member_ref.clone(),
+        role: FABRIC_MEMBER_ROLE_BUILD_PROCESSOR.to_string(),
+        state: if succeeded {
+            FABRIC_MEMBER_CONTRIBUTION_RUNNING.to_string()
+        } else {
+            FABRIC_MEMBER_CONTRIBUTION_BLOCKED.to_string()
+        },
+        contract_ref: contract.build_contract_ref.clone(),
+        subject_ref: run.run_ref.clone(),
+        capability_refs: vec![CAPABILITY_BUILD_RUN_EXECUTE.to_string()],
+        grant_refs: request.grant_refs.clone(),
+        input_refs: vec![
+            contract.source_snapshot_ref.clone(),
+            contract.recipe_ref.clone(),
+            request.runner_operation_ref.clone(),
+        ],
+        output_refs: if succeeded {
+            [
+                output.artifact_refs.clone(),
+                output.proof_refs.clone(),
+                output.release_candidate_refs.clone(),
+            ]
+            .concat()
+        } else {
+            Vec::new()
+        },
+        evidence_refs: output.evidence_refs.clone(),
+        lifecycle_plan_refs: vec![format!(
+            "lifecycle-plan:build:{}",
+            sanitize_ref(&run.run_ref)
+        )],
+        release_refs: if succeeded {
+            output.release_candidate_refs.clone()
+        } else {
+            Vec::new()
+        },
+        resource_posture: None,
+        blocked_reasons: run.blocked_reasons.clone(),
+        safe_facts: serde_json::json!({
+            "processorContract": "build",
+            "buildContractRef": contract.build_contract_ref,
+            "runRef": run.run_ref,
+            "runState": run.state,
+            "artifactCount": if succeeded { output.artifact_refs.len() } else { 0 },
+            "releaseCandidateCount": if succeeded { output.release_candidate_refs.len() } else { 0 }
+        }),
+        observed_at: run.completed_at.unwrap_or(request.now + 1),
+        expires_at: run.expires_at,
+    })?;
+    validate_host_fabric_member_contribution(&contribution)?;
+    Ok(contribution)
+}
+
 pub fn default_build_state(now: u64) -> Result<BuildState> {
     let fixture = build_fixture(now, BUILD_RUN_STATE_SUCCEEDED)?;
     let state = BuildState {
@@ -431,6 +510,7 @@ pub fn default_build_state(now: u64) -> Result<BuildState> {
         artifacts: fixture.artifact.into_iter().collect(),
         proofs: vec![fixture.proof],
         runner_operations: vec![fixture.runner_operation],
+        host_fabric_contributions: vec![fixture.host_fabric_contribution],
         updated_at: now,
     };
     validate_build_state(&state)?;
@@ -468,6 +548,8 @@ pub fn append_build_run(
     validate_build_state(state)?;
     let run = reduce_build_run(&state.contract, request.clone(), output.clone())?;
     let runner_operation = build_runner_operation(&state.contract, &run, &request, &output)?;
+    let host_fabric_contribution =
+        build_host_fabric_contribution_for_run(&state.contract, &run, &request, &output)?;
     let artifact = if run.state == BUILD_RUN_STATE_SUCCEEDED {
         Some(default_artifact_for_run(&run, &output, request.now)?)
     } else {
@@ -480,10 +562,14 @@ pub fn append_build_run(
     }
     state.proofs.push(proof.clone());
     state.runner_operations.push(runner_operation.clone());
+    state
+        .host_fabric_contributions
+        .push(host_fabric_contribution.clone());
     state.updated_at = request.now;
     validate_build_state(state)?;
     Ok(BuildRunOutcome {
         runner_operation,
+        host_fabric_contribution,
         run,
         artifact,
         proof,
@@ -515,6 +601,7 @@ pub fn build_state_status(state: &BuildState) -> Result<BuildStatus> {
         artifact_count: state.artifacts.len(),
         proof_count: state.proofs.len(),
         runner_operation_count: state.runner_operations.len(),
+        host_fabric_contribution_count: state.host_fabric_contributions.len(),
     })
 }
 
@@ -522,6 +609,23 @@ pub fn validate_build_fixture(fixture: &BuildFixture) -> Result<()> {
     validate_build_contract(&fixture.contract)?;
     validate_build_run(&fixture.run)?;
     validate_build_proof(&fixture.proof)?;
+    validate_runner_operation(&fixture.runner_operation)?;
+    validate_host_fabric_member_contribution(&fixture.host_fabric_contribution)?;
+    if fixture.host_fabric_contribution.role != FABRIC_MEMBER_ROLE_BUILD_PROCESSOR {
+        return Err(anyhow!(
+            "build fixture host-fabric contribution must be buildProcessor"
+        ));
+    }
+    if fixture.host_fabric_contribution.contract_ref != fixture.contract.build_contract_ref {
+        return Err(anyhow!(
+            "build fixture host-fabric contribution contract mismatch"
+        ));
+    }
+    if fixture.host_fabric_contribution.subject_ref != fixture.run.run_ref {
+        return Err(anyhow!(
+            "build fixture host-fabric contribution subject mismatch"
+        ));
+    }
     if fixture.run.state == BUILD_RUN_STATE_SUCCEEDED {
         let artifact = fixture
             .artifact
@@ -568,7 +672,28 @@ pub fn validate_build_state(state: &BuildState) -> Result<()> {
             return Err(anyhow!("build state runner operation contract mismatch"));
         }
     }
+    for host_fabric_contribution in &state.host_fabric_contributions {
+        validate_host_fabric_member_contribution(host_fabric_contribution)?;
+        if host_fabric_contribution.contract_ref != state.contract.build_contract_ref {
+            return Err(anyhow!(
+                "build state host-fabric contribution contract mismatch"
+            ));
+        }
+    }
     Ok(())
+}
+
+fn sanitize_ref(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '-' {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect()
 }
 
 fn default_artifact_for_run(

@@ -4,8 +4,9 @@ use constitute_build::{
     validate_build_fixture, validate_build_state,
 };
 use constitute_protocol::{
-    BUILD_RUN_STATE_BLOCKED, BUILD_RUN_STATE_SUCCEEDED, RUNNER_OPERATION_STATE_BLOCKED,
-    RUNNER_OPERATION_STATE_SUCCEEDED,
+    BUILD_RUN_STATE_BLOCKED, BUILD_RUN_STATE_SUCCEEDED, FABRIC_MEMBER_CONTRIBUTION_BLOCKED,
+    FABRIC_MEMBER_CONTRIBUTION_RUNNING, FABRIC_MEMBER_ROLE_BUILD_PROCESSOR,
+    RUNNER_OPERATION_STATE_BLOCKED, RUNNER_OPERATION_STATE_SUCCEEDED,
 };
 
 #[test]
@@ -50,6 +51,18 @@ fn fixture_validates_build_contract_and_runner_fulfillment() {
             "release:candidate:build-runner-proof"
         ]
     );
+    assert_eq!(
+        fixture.host_fabric_contribution.role,
+        FABRIC_MEMBER_ROLE_BUILD_PROCESSOR
+    );
+    assert_eq!(
+        fixture.host_fabric_contribution.state,
+        FABRIC_MEMBER_CONTRIBUTION_RUNNING
+    );
+    assert_eq!(
+        fixture.host_fabric_contribution.subject_ref,
+        fixture.run.run_ref
+    );
 }
 
 #[test]
@@ -70,6 +83,14 @@ fn blocked_build_is_posture_not_artifact_truth() {
     );
     assert_eq!(
         fixture.runner_operation.blocked_reasons,
+        vec!["runner.resource.unavailable"]
+    );
+    assert_eq!(
+        fixture.host_fabric_contribution.state,
+        FABRIC_MEMBER_CONTRIBUTION_BLOCKED
+    );
+    assert_eq!(
+        fixture.host_fabric_contribution.blocked_reasons,
         vec!["runner.resource.unavailable"]
     );
 }
@@ -173,6 +194,7 @@ fn build_state_persists_runner_operation_and_artifact_posture() {
     validate_build_state(&state).expect("state validates");
     let initial = build_state_status(&state).expect("status builds");
     assert_eq!(initial.runner_operation_count, 1);
+    assert_eq!(initial.host_fabric_contribution_count, 1);
 
     let fixture = build_fixture(default_now(), BUILD_RUN_STATE_SUCCEEDED).expect("fixture builds");
     let request = default_build_run_request(default_now() + 100);
@@ -192,11 +214,24 @@ fn build_state_persists_runner_operation_and_artifact_posture() {
     assert_eq!(state.artifacts.len(), 2);
     assert_eq!(state.proofs.len(), 2);
     assert_eq!(state.runner_operations.len(), 2);
+    assert_eq!(state.host_fabric_contributions.len(), 2);
     assert_eq!(
         state
             .runner_operations
             .last()
             .expect("runner op")
+            .contract_ref,
+        state.contract.build_contract_ref
+    );
+    assert_eq!(
+        outcome.host_fabric_contribution.role,
+        FABRIC_MEMBER_ROLE_BUILD_PROCESSOR
+    );
+    assert_eq!(
+        state
+            .host_fabric_contributions
+            .last()
+            .expect("fabric contribution")
             .contract_ref,
         state.contract.build_contract_ref
     );
