@@ -481,7 +481,9 @@ pub fn build_host_fabric_contribution_for_run(
         fabric_ref: request.fabric_ref.clone(),
         host_ref: request.host_ref.clone(),
         member_ref: request.runner_member_ref.clone(),
+        participant_ref: request.requester_ref.clone(),
         role: FABRIC_MEMBER_ROLE_BUILD_PROCESSOR.to_string(),
+        role_ref: format!("role:{FABRIC_MEMBER_ROLE_BUILD_PROCESSOR}"),
         state: if succeeded {
             FABRIC_MEMBER_CONTRIBUTION_RUNNING.to_string()
         } else {
@@ -489,6 +491,20 @@ pub fn build_host_fabric_contribution_for_run(
         },
         contract_ref: contract.build_contract_ref.clone(),
         subject_ref: run.run_ref.clone(),
+        module_refs: vec![
+            contract.recipe_ref.clone(),
+            request.runner_ref.clone(),
+            "module:build-processor".to_string(),
+        ],
+        source_refs: [
+            vec![
+                contract.source_graph_ref.clone(),
+                contract.source_snapshot_ref.clone(),
+            ],
+            contract.source_operation_refs.clone(),
+            contract.content_index_refs.clone(),
+        ]
+        .concat(),
         capability_refs: vec![CAPABILITY_BUILD_RUN_EXECUTE.to_string()],
         grant_refs: request.grant_refs.clone(),
         input_refs: [
