@@ -36,12 +36,28 @@ fn fixture_validates_build_contract_and_runner_fulfillment() {
         fixture.contract.content_index_refs
     );
     assert_eq!(
+        fixture.run.processor_contract_refs,
+        fixture.contract.processor_contract_refs
+    );
+    assert_eq!(
+        fixture.run.processor_role_refs,
+        fixture.contract.processor_role_refs
+    );
+    assert_eq!(
         fixture.run.source_operation_refs,
         fixture.contract.source_operation_refs
     );
     assert_eq!(
         fixture.proof.source_operation_refs,
         fixture.contract.source_operation_refs
+    );
+    assert_eq!(
+        fixture.proof.processor_contract_refs,
+        fixture.contract.processor_contract_refs
+    );
+    assert_eq!(
+        fixture.proof.processor_role_refs,
+        fixture.contract.processor_role_refs
     );
     assert_eq!(fixture.run.project_refs, fixture.contract.project_refs);
     assert_eq!(fixture.run.work_item_refs, fixture.contract.work_item_refs);
@@ -116,6 +132,8 @@ fn status_is_bounded() {
     assert!(status.runner_ref.starts_with("runner:instance:"));
     assert!(status.runner_operation_ref.starts_with("runner:operation:"));
     assert_eq!(status.source_operation_ref_count, 2);
+    assert_eq!(status.processor_contract_ref_count, 1);
+    assert_eq!(status.processor_role_ref_count, 1);
 }
 
 #[test]

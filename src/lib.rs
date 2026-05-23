@@ -45,6 +45,8 @@ pub struct BuildStatus {
     pub build_contract_ref: String,
     pub source_snapshot_ref: String,
     pub source_operation_ref_count: usize,
+    pub processor_contract_ref_count: usize,
+    pub processor_role_ref_count: usize,
     pub runner_ref: String,
     pub runner_operation_ref: String,
     pub artifact_ref: String,
@@ -126,6 +128,8 @@ pub fn build_fixture(now: u64, state: &str) -> Result<BuildFixture> {
             "source:operation:project-link".to_string(),
         ],
         content_index_refs: vec!["content-index:source:constitute-git".to_string()],
+        processor_contract_refs: vec!["processor-contract:logging.cybersec".to_string()],
+        processor_role_refs: vec!["role:cybersec.processor".to_string()],
         runner_role_refs: vec!["runner:role:build".to_string()],
         runner_refs: vec!["runner:instance:local".to_string()],
         resource_grant_refs: vec!["resource:grant:build-lite".to_string()],
@@ -160,6 +164,8 @@ pub fn build_fixture(now: u64, state: &str) -> Result<BuildFixture> {
         source_snapshot_ref: contract.source_snapshot_ref.clone(),
         runner_ref: "runner:instance:local".to_string(),
         source_operation_refs: contract.source_operation_refs.clone(),
+        processor_contract_refs: contract.processor_contract_refs.clone(),
+        processor_role_refs: contract.processor_role_refs.clone(),
         artifact_refs: vec![artifact_plan.artifact_ref.clone()],
         log_refs: vec!["storage:object:build-log".to_string()],
         metric_refs: vec!["metrics:build:build-runner-proof".to_string()],
@@ -299,6 +305,8 @@ pub fn reduce_build_run(
         },
         source_operation_refs: contract.source_operation_refs.clone(),
         content_index_refs: contract.content_index_refs.clone(),
+        processor_contract_refs: contract.processor_contract_refs.clone(),
+        processor_role_refs: contract.processor_role_refs.clone(),
         grant_refs: request.grant_refs,
         resource_grant_refs: contract.resource_grant_refs.clone(),
         secret_boundary_refs: contract.secret_boundary_refs.clone(),
@@ -383,6 +391,8 @@ pub fn build_runner_operation(
             ],
             contract.source_operation_refs.clone(),
             contract.content_index_refs.clone(),
+            contract.processor_contract_refs.clone(),
+            contract.processor_role_refs.clone(),
         ]
         .concat(),
         output_refs: if succeeded {
@@ -440,6 +450,8 @@ pub fn build_runner_operation(
             "processorContract": "build",
             "sourceSnapshotRef": contract.source_snapshot_ref,
             "sourceOperationCount": contract.source_operation_refs.len(),
+            "processorContractCount": contract.processor_contract_refs.len(),
+            "processorRoleCount": contract.processor_role_refs.len(),
             "recipeRef": contract.recipe_ref,
             "artifactCount": if succeeded { output.artifact_refs.len() } else { 0 },
             "releaseCandidateCount": if succeeded { output.release_candidate_refs.len() } else { 0 }
@@ -487,6 +499,8 @@ pub fn build_host_fabric_contribution_for_run(
             ],
             contract.source_operation_refs.clone(),
             contract.content_index_refs.clone(),
+            contract.processor_contract_refs.clone(),
+            contract.processor_role_refs.clone(),
         ]
         .concat(),
         output_refs: if succeeded {
@@ -517,6 +531,8 @@ pub fn build_host_fabric_contribution_for_run(
             "runRef": run.run_ref,
             "runState": run.state,
             "sourceOperationCount": contract.source_operation_refs.len(),
+            "processorContractCount": contract.processor_contract_refs.len(),
+            "processorRoleCount": contract.processor_role_refs.len(),
             "artifactCount": if succeeded { output.artifact_refs.len() } else { 0 },
             "releaseCandidateCount": if succeeded { output.release_candidate_refs.len() } else { 0 }
         }),
@@ -615,6 +631,8 @@ pub fn build_state_status(state: &BuildState) -> Result<BuildStatus> {
         build_contract_ref: state.contract.build_contract_ref.clone(),
         source_snapshot_ref: state.contract.source_snapshot_ref.clone(),
         source_operation_ref_count: state.contract.source_operation_refs.len(),
+        processor_contract_ref_count: state.contract.processor_contract_refs.len(),
+        processor_role_ref_count: state.contract.processor_role_refs.len(),
         runner_ref: last_run.runner_ref.clone(),
         runner_operation_ref: last_run.runner_operation_ref.clone(),
         artifact_ref: state
@@ -655,6 +673,12 @@ pub fn validate_build_fixture(fixture: &BuildFixture) -> Result<()> {
     if fixture.run.source_operation_refs != fixture.contract.source_operation_refs {
         return Err(anyhow!("build run source operation refs diverge"));
     }
+    if fixture.run.processor_contract_refs != fixture.contract.processor_contract_refs {
+        return Err(anyhow!("build run processor contract refs diverge"));
+    }
+    if fixture.run.processor_role_refs != fixture.contract.processor_role_refs {
+        return Err(anyhow!("build run processor role refs diverge"));
+    }
     if fixture.run.state == BUILD_RUN_STATE_SUCCEEDED {
         let artifact = fixture
             .artifact
@@ -666,6 +690,14 @@ pub fn validate_build_fixture(fixture: &BuildFixture) -> Result<()> {
         }
         if fixture.run.source_operation_refs != fixture.proof.source_operation_refs {
             return Err(anyhow!("build run and proof source operation refs diverge"));
+        }
+        if fixture.run.processor_contract_refs != fixture.proof.processor_contract_refs {
+            return Err(anyhow!(
+                "build run and proof processor contract refs diverge"
+            ));
+        }
+        if fixture.run.processor_role_refs != fixture.proof.processor_role_refs {
+            return Err(anyhow!("build run and proof processor role refs diverge"));
         }
         if !fixture
             .run
@@ -693,6 +725,12 @@ pub fn validate_build_state(state: &BuildState) -> Result<()> {
         }
         if run.source_operation_refs != state.contract.source_operation_refs {
             return Err(anyhow!("build state run source operation refs diverge"));
+        }
+        if run.processor_contract_refs != state.contract.processor_contract_refs {
+            return Err(anyhow!("build state run processor contract refs diverge"));
+        }
+        if run.processor_role_refs != state.contract.processor_role_refs {
+            return Err(anyhow!("build state run processor role refs diverge"));
         }
     }
     for artifact in &state.artifacts {
@@ -783,6 +821,8 @@ fn build_proof_for_run(run: &BuildRun, output: &BuildOutputPlan, now: u64) -> Re
         source_snapshot_ref: run.source_snapshot_ref.clone(),
         runner_ref: run.runner_ref.clone(),
         source_operation_refs: run.source_operation_refs.clone(),
+        processor_contract_refs: run.processor_contract_refs.clone(),
+        processor_role_refs: run.processor_role_refs.clone(),
         artifact_refs: if succeeded {
             output.artifact_refs.clone()
         } else {
