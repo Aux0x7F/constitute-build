@@ -1,7 +1,8 @@
 use anyhow::{Result, anyhow};
 use constitute_build::{
-    append_build_run, build_fixture, build_state_status, build_status, default_build_output_plan,
-    default_build_run_request, default_build_state, default_now, load_build_state,
+    append_build_run, build_fixture, build_fixture_from_projection, build_projection_status,
+    build_state_status, build_status, default_build_output_plan, default_build_run_request,
+    default_build_state, default_now, load_build_materialization_projection, load_build_state,
     save_build_state,
 };
 use std::env;
@@ -15,9 +16,11 @@ fn main() -> Result<()> {
 
     match args.remove(0).as_str() {
         "fixture" => fixture_command(args),
+        "fulfill" => fulfill_command(args),
         "init" => init_command(args),
         "run" => run_command(args),
         "status" => status_command(args),
+        "projection" => projection_command(args),
         command => Err(anyhow!("unsupported constitute-build command: {command}")),
     }
 }
@@ -27,6 +30,19 @@ fn fixture_command(args: Vec<String>) -> Result<()> {
         Some("run") | None => print_json(&build_fixture(default_now(), "succeeded")?),
         Some(name) => Err(anyhow!("unsupported fixture: {name}")),
     }
+}
+
+fn fulfill_command(args: Vec<String>) -> Result<()> {
+    let input = option_value(&args, "--projection-input")
+        .or_else(|| option_value(&args, "--input"))
+        .ok_or_else(|| anyhow!("fulfill requires --projection-input"))?;
+    let state = option_value(&args, "--state").unwrap_or_else(|| "succeeded".to_string());
+    let projection = load_build_materialization_projection(input)?;
+    print_json(&build_fixture_from_projection(
+        &projection,
+        default_now(),
+        &state,
+    )?)
 }
 
 fn run_command(args: Vec<String>) -> Result<()> {
@@ -82,6 +98,13 @@ fn status_command(args: Vec<String>) -> Result<()> {
     }
 }
 
+fn projection_command(args: Vec<String>) -> Result<()> {
+    let input =
+        option_value(&args, "--input").ok_or_else(|| anyhow!("projection requires --input"))?;
+    let projection = load_build_materialization_projection(input)?;
+    print_json(&build_projection_status(&projection)?)
+}
+
 fn option_value(args: &[String], name: &str) -> Option<String> {
     args.windows(2)
         .find(|pair| pair[0] == name)
@@ -95,6 +118,6 @@ fn print_json(value: &impl serde::Serialize) -> Result<()> {
 
 fn print_help() {
     println!(
-        "constitute-build\n\nCommands:\n  fixture run\n  init --state-file target/build-state.json\n  run --state succeeded|blocked [--state-file target/build-state.json]\n  status [--state-file target/build-state.json]"
+        "constitute-build\n\nCommands:\n  fixture run\n  fulfill --projection-input build-materialization.json [--state succeeded|blocked]\n  init --state-file target/build-state.json\n  run --state succeeded|blocked [--state-file target/build-state.json]\n  projection --input build-materialization.json\n  status [--state-file target/build-state.json]"
     );
 }
